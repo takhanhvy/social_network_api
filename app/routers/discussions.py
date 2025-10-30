@@ -31,6 +31,7 @@ router = APIRouter(prefix="/discussions", tags=["discussions"])
 async def _ensure_group_member(
     session: AsyncSession, group_id: int, user_id: int
 ) -> None:
+    # Discussion access relies on group membership for confidentiality.
     result = await session.execute(
         select(GroupMembership).where(
             GroupMembership.group_id == group_id,
@@ -47,6 +48,7 @@ async def _ensure_group_member(
 async def _ensure_event_participant(
     session: AsyncSession, event_id: int, user_id: int
 ) -> None:
+    # Event threads are accessible to participants and organizers.
     result = await session.execute(
         select(EventParticipant).where(
             EventParticipant.event_id == event_id,
@@ -183,4 +185,3 @@ async def list_messages(
     elif thread.context == ThreadContext.event and thread.event_id:
         await _ensure_event_participant(session, thread.event_id, current_user.id)
     return [MessageRead.from_orm(message) for message in thread.messages]
-

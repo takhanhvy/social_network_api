@@ -29,6 +29,7 @@ def auth_header(token: str) -> dict[str, str]:
 
 @pytest.mark.asyncio
 async def test_end_to_end_social_network_flow(client: AsyncClient) -> None:
+    """Covers the main happy path from onboarding to optional addons."""
     # Create two users and authenticate
     owner = await register_user(client, "owner@example.com", "StrongPass!1", "Owner One")
     owner_token = await login_user(client, owner["email"], "StrongPass!1")
@@ -245,4 +246,3 @@ async def test_end_to_end_social_network_flow(client: AsyncClient) -> None:
     me_resp = await client.get("/api/users/me", headers=auth_header(owner_token))
     assert me_resp.status_code == 200
     assert me_resp.json()["email"] == owner["email"]
-

@@ -38,6 +38,7 @@ async def _get_event(session: AsyncSession, event_id: int) -> Event:
 async def _ensure_event_member(
     session: AsyncSession, event_id: int, user_id: int
 ) -> None:
+    # Shopping/carpool features are reserved to event participants or organizers.
     participant = await session.execute(
         select(EventParticipant).where(
             EventParticipant.event_id == event_id,
@@ -181,4 +182,3 @@ async def list_carpool_offers(
     )
     offers = result.scalars().all()
     return [CarpoolOfferRead.from_orm(offer) for offer in offers]
-

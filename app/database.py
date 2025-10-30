@@ -30,14 +30,14 @@ async_session = async_sessionmaker(
 
 
 async def init_db() -> None:
-    """Create all tables (for demo / development)."""
+    """Create all tables (intended for local/dev usage)."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator["AsyncSession"]:
-    """Provide a transactional scope for request handlers."""
+    """Yield a transaction-like session that commits on success and rolls back on errors."""
     session = async_session()
     try:
         yield session

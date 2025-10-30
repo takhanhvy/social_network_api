@@ -22,6 +22,7 @@ async def _get_event(session: AsyncSession, event_id: int) -> Event:
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
     if not event.billetterie_enabled:
+        # Protect against ticket sales when the feature is toggled off.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ticketing not enabled for this event",
@@ -148,4 +149,3 @@ async def purchase_ticket(
     await session.flush()
     await session.refresh(ticket)
     return TicketRead.from_orm(ticket)
-

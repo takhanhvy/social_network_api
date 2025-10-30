@@ -25,6 +25,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 async def _ensure_can_manage_group_event(
     session: AsyncSession, group_id: int, user_id: int
 ) -> None:
+    # Group admins or members allowed to create events must be verified server-side.
     result = await session.execute(
         select(GroupMembership).where(
             GroupMembership.group_id == group_id,
@@ -44,6 +45,7 @@ async def _ensure_can_manage_group_event(
 async def _get_event_with_relations(
     session: AsyncSession, event_id: int
 ) -> Event:
+    # Load organizers/participants eagerly to avoid async lazy-load issues.
     result = await session.execute(
         select(Event)
         .where(Event.id == event_id)

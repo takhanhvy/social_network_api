@@ -98,6 +98,7 @@ async def get_group(
 async def _ensure_group_admin(
     session: AsyncSession, group_id: int, user_id: int
 ) -> GroupMembership:
+    # Only group administrators can manage membership.
     result = await session.execute(
         select(GroupMembership).where(
             GroupMembership.group_id == group_id, GroupMembership.user_id == user_id

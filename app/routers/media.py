@@ -32,6 +32,7 @@ router = APIRouter(prefix="/media", tags=["media"])
 async def _ensure_event_access(
     session: AsyncSession, event_id: int, user_id: int
 ) -> None:
+    # Albums, photos, and comments stay private to the event ecosystem.
     participant = await session.execute(
         select(EventParticipant).where(
             EventParticipant.event_id == event_id,
@@ -220,4 +221,3 @@ async def list_photo_comments(
     )
     comments = result.scalars().all()
     return [PhotoCommentRead.from_orm(comment) for comment in comments]
-

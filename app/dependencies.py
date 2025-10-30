@@ -25,6 +25,7 @@ async def get_current_user(
     session: AsyncSession = Depends(get_db_session),
 ) -> User:
     try:
+        # Tokens embed the user id inside the `sub` claim.
         payload = decode_access_token(token)
         user_id = int(payload["sub"])
     except (JWTError, KeyError, ValueError) as exc:
@@ -50,4 +51,3 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
             detail="Inactive user",
         )
     return current_user
-

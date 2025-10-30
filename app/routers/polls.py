@@ -48,6 +48,7 @@ async def _ensure_event_organizer(
 async def _ensure_event_participant(
     session: AsyncSession, event_id: int, user_id: int
 ) -> None:
+    # Either a participant or an organizer is allowed to interact with poll content.
     result = await session.execute(
         select(EventParticipant).where(
             EventParticipant.event_id == event_id,
@@ -144,6 +145,7 @@ async def list_polls(
 
 
 def _serialize_poll(poll: Poll) -> PollDetail:
+    """Build a full poll payload with vote counts while avoiding lazy loads."""
     questions: List[PollQuestionRead] = []
     for question in poll.questions:
         options = [
@@ -187,6 +189,7 @@ async def submit_poll_votes(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> PollDetail:
+    # Ensures we operate on fresh relationships so vote counts stay consistent.
     poll = await _get_poll_with_questions(session, poll_id)
     if not poll.is_active:
         raise HTTPException(
