@@ -34,8 +34,8 @@ async def create_group(
     group = Group(
         name=group_in.name,
         description=group_in.description,
-        icon=group_in.icon,
-        cover_photo=group_in.cover_photo,
+        icon=str(group_in.icon) if group_in.icon else None,
+        cover_photo=str(group_in.cover_photo) if group_in.cover_photo else None,
         type=group_in.type,
         allow_member_posts=group_in.allow_member_posts,
         allow_member_events=group_in.allow_member_events,

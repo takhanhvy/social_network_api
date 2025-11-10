@@ -77,7 +77,7 @@ async def create_event(
         start_date=payload.start_date,
         end_date=payload.end_date,
         location=payload.location,
-        cover_photo=payload.cover_photo,
+        cover_photo=str(payload.cover_photo) if payload.cover_photo else None,
         is_private=payload.is_private,
         group_id=payload.group_id,
         created_by_id=current_user.id,

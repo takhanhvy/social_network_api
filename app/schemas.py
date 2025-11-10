@@ -1,18 +1,42 @@
 """Pydantic schemas for request and response payloads."""
 
 from datetime import datetime
+import re
 from typing import List, Optional
 
 from pydantic import (
+    AnyHttpUrl,
     BaseModel,
+    ConfigDict,
     EmailStr,
     Field,
-    ConfigDict,
+    FieldValidationInfo,
     constr,
+    field_validator,
     model_validator,
 )
 
 from app.models import GroupType, ThreadContext
+
+PASSWORD_REGEX = re.compile(
+    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$"
+)
+
+
+def _normalize_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return value
+
+
+def _normalize_required_text(value: str, field_name: str) -> str:
+    cleaned = _normalize_optional_text(value)
+    if not cleaned:
+        raise ValueError(f"{field_name} cannot be empty or blank")
+    return cleaned
 
 
 # Authentication -----------------------------------------------------------------
@@ -21,11 +45,15 @@ from app.models import GroupType, ThreadContext
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: int = Field(..., ge=1)
 
 
 class TokenPayload(BaseModel):
     sub: str
     exp: int
+    iat: int
+    iss: Optional[str] = None
+    aud: Optional[str] = None
 
 
 # Users ----------------------------------------------------------------------------
@@ -35,9 +63,23 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
 
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def normalize_full_name(cls, value: str) -> str:
+        return _normalize_required_text(value, "full_name")
+
 
 class UserCreate(UserBase):
     password: constr(min_length=8)  # type: ignore[valid-type]
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not PASSWORD_REGEX.match(value):
+            raise ValueError(
+                "Password must contain uppercase, lowercase, digit, and special character"
+            )
+        return value
 
 
 class UserRead(UserBase):
@@ -55,11 +97,21 @@ class UserRead(UserBase):
 class GroupBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    icon: Optional[str] = Field(default=None, max_length=255)
-    cover_photo: Optional[str] = Field(default=None, max_length=255)
+    icon: Optional[AnyHttpUrl] = None
+    cover_photo: Optional[AnyHttpUrl] = None
     type: GroupType
     allow_member_posts: bool = True
     allow_member_events: bool = True
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_required_text(value, "name")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_description(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_text(value)
 
 
 class GroupCreate(GroupBase):
@@ -110,13 +162,25 @@ class EventBase(BaseModel):
     start_date: datetime
     end_date: datetime
     location: str = Field(min_length=1, max_length=255)
-    cover_photo: Optional[str] = Field(default=None, max_length=255)
+    cover_photo: Optional[AnyHttpUrl] = None
     is_private: bool = False
     group_id: Optional[int] = None
     carpool_enabled: bool = False
     shopping_list_enabled: bool = False
     billetterie_enabled: bool = False
     polls_enabled: bool = True
+
+    @field_validator("name", "location", mode="before")
+    @classmethod
+    def normalize_event_text(
+        cls, value: str, info: FieldValidationInfo
+    ) -> str:
+        return _normalize_required_text(value, info.field_name or "value")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_event_description(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_text(value)
 
     @model_validator(mode="after")
     def validate_dates(cls, data: "EventBase") -> "EventBase":
@@ -178,6 +242,11 @@ class DiscussionThreadCreate(BaseModel):
     group_id: Optional[int] = None
     event_id: Optional[int] = None
 
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        return _normalize_required_text(value, "title")
+
     @model_validator(mode="after")
     def validate_context(cls, data: "DiscussionThreadCreate") -> "DiscussionThreadCreate":
         if data.context == ThreadContext.group and not data.group_id:
@@ -204,6 +273,11 @@ class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
     parent_id: Optional[int] = None
 
+    @field_validator("content", mode="before")
+    @classmethod
+    def normalize_content(cls, value: str) -> str:
+        return _normalize_required_text(value, "content")
+
 
 class MessageRead(BaseModel):
     id: int
@@ -226,6 +300,11 @@ class DiscussionThreadDetail(DiscussionThreadRead):
 class PhotoAlbumCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_required_text(value, "name")
+
 
 class PhotoAlbumRead(BaseModel):
     id: int
@@ -239,15 +318,20 @@ class PhotoAlbumRead(BaseModel):
 
 
 class PhotoCreate(BaseModel):
-    url: str
+    url: AnyHttpUrl
     caption: Optional[str] = None
+
+    @field_validator("caption", mode="before")
+    @classmethod
+    def normalize_caption(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_text(value)
 
 
 class PhotoRead(BaseModel):
     id: int
     album_id: int
     uploaded_by_id: int
-    url: str
+    url: AnyHttpUrl
     caption: Optional[str]
     created_at: datetime
 
@@ -257,6 +341,11 @@ class PhotoRead(BaseModel):
 
 class PhotoCommentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def normalize_comment(cls, value: str) -> str:
+        return _normalize_required_text(value, "content")
 
 
 class PhotoCommentRead(BaseModel):
@@ -276,15 +365,30 @@ class PhotoCommentRead(BaseModel):
 class PollOptionCreate(BaseModel):
     label: str = Field(min_length=1, max_length=255)
 
+    @field_validator("label", mode="before")
+    @classmethod
+    def normalize_label(cls, value: str) -> str:
+        return _normalize_required_text(value, "label")
+
 
 class PollQuestionCreate(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     options: List[PollOptionCreate]
 
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        return _normalize_required_text(value, "question")
+
 
 class PollCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     questions: List[PollQuestionCreate]
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        return _normalize_required_text(value, "title")
 
 
 class PollRead(BaseModel):
@@ -336,6 +440,11 @@ class TicketTypeCreate(BaseModel):
     price: float = Field(ge=0)
     quantity: int = Field(ge=0)
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_required_text(value, "name")
+
 
 class TicketTypeRead(BaseModel):
     id: int
@@ -354,6 +463,18 @@ class TicketPurchase(BaseModel):
     purchaser_last_name: str
     purchaser_email: EmailStr
     purchaser_address: Optional[str] = None
+
+    @field_validator("purchaser_first_name", "purchaser_last_name", mode="before")
+    @classmethod
+    def normalize_purchaser_name(
+        cls, value: str, info: FieldValidationInfo
+    ) -> str:
+        return _normalize_required_text(value, info.field_name or "name")
+
+    @field_validator("purchaser_address", mode="before")
+    @classmethod
+    def normalize_address(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_text(value)
 
 
 class TicketRead(BaseModel):
@@ -377,6 +498,11 @@ class ShoppingItemCreate(BaseModel):
     quantity: int = Field(ge=1)
     arrival_time: datetime
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_required_text(value, "name")
+
 
 class ShoppingItemRead(BaseModel):
     id: int
@@ -399,6 +525,11 @@ class CarpoolOfferCreate(BaseModel):
     price: float = Field(ge=0)
     available_seats: int = Field(ge=1)
     max_detour_minutes: int = Field(ge=0)
+
+    @field_validator("departure_location", mode="before")
+    @classmethod
+    def normalize_departure(cls, value: str) -> str:
+        return _normalize_required_text(value, "departure_location")
 
 
 class CarpoolOfferRead(BaseModel):

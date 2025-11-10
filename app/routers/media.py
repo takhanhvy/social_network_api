@@ -139,7 +139,7 @@ async def add_photo(
     photo = Photo(
         album_id=album.id,
         uploaded_by_id=current_user.id,
-        url=payload.url,
+        url=str(payload.url),
         caption=payload.caption,
     )
     session.add(photo)
