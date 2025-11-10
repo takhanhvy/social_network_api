@@ -1,83 +1,114 @@
 # My Social Networks API
 
-Plateforme REST écrite avec **FastAPI + SQLModel** pour couvrir l’ensemble du cahier des charges “My Social Networks” : gestion des utilisateurs, groupes, événements, discussions, médias, sondages, billetterie et extensions (shopping list, covoiturage). L’objectif principal est de proposer une API riche tout en garantissant un niveau de sécurité comparable à des services exposés publiquement.
+Ce projet propose une API REST inspirée de Facebook permettant de créer et gérer des événements (publics/privés), des groupes (public, privé, secret) et leurs fils de discussion. Elle prend en charge les participants, organisateurs/administrateurs, albums photo avec commentaires, sondages à choix unique, ainsi qu’une billetterie (types de billets, achat externe, quotas). Des bonus incluent la shopping list (apports uniques par événement) et le covoiturage (trajets, places, prix, tolérance de détour). 
+
+L’API applique des techniques de sécurité telles que l’authentification et l’autorisation via JWT, la validation des entrées, la sécurisation des communications avec HTTPS, la limitation des requêtes, et la gestion des erreurs.
+
+Plus de détails : [Consulter le cahier des charges](./My_Social_Networks_API.pdf)
+
 
 ---
 
-## 1. Architecture en un coup d’œil
+## Sommaire
+1. [Stack & architecture](#stack--architecture)
+2. [Fonctionnalités](#fonctionnalités)
+3. [Mise en route](#mise-en-route)
+4. [Configuration](#configuration)
+5. [Sécurité intégrée](#sécurité-intégrée)
+6. [Tests & audit](#tests--audit)
+7. [Roadmap / améliorations](#roadmap--améliorations)
+8. [Références](#références)
 
+---
+
+## Stack & architecture
+
+| Couche | Technologies | Raison du choix |
+|--------|--------------|-----------------|
+| API | **FastAPI** (async) | Performance, typage, documentation interactive automatique. |
+| ORM | **SQLModel** (SQLAlchemy 2.x) | Combine Pydantic + SQLAlchemy, réduit le boilerplate. |
+| Auth | **OAuth2 password flow + JWT** | Compatible SPA/mobile, stateless et facilement testable. |
+| DB (dev) | **SQLite + aiosqlite** | Simplicité pour le prototypage, switchable via `DATABASE_URL`. |
+| Tests | **pytest, pytest-asyncio, httpx** | Permet de rejouer un flux utilisateur complet. |
+| Sécurité | **slowapi**, **secure**, validations Pydantic | Rate limiting, headers type Helmet, normalisation des entrées. |
+
+Organisation du code (extrait) :
 ```
-.
-├── app
-│   ├── core/            # Configuration, sécurité (JWT, rate limiting, headers)
-│   ├── routers/         # Routes par domaine métier (auth, groups, events, …)
-│   ├── schemas.py       # Contrats Pydantic (validation stricte + normalisation)
-│   ├── models.py        # Modèles SQLModel (SQLAlchemy 2.x)
-│   ├── database.py      # Connexion async + gestion des transactions
-│   └── main.py          # Point d’entrée FastAPI / middlewares
-├── tests/               # Scénarios end‑to‑end et tests de sécurité
-├── requirements.txt     # Dépendances figées
-├── pytest.ini
-└── README.md
+app/
+├─ core/        # configuration, sécurité (JWT, rate limit, headers)
+├─ routers/     # routes classées par domaine (auth, groups, events, …)
+├─ schemas.py   # contrats Pydantic
+├─ models.py    # SQLModel
+├─ database.py  # connexion async + transactions
+└─ main.py      # point d’entrée FastAPI + middlewares
+tests/
+├─ test_app.py        # scénario fonctionnel complet
+└─ test_security.py   # tests ciblés (password policy, rate limit)
 ```
 
-**Justification des choix techniques**
-- *FastAPI + SQLModel (async)* : typage strict, performances élevées, intégration transparente avec SQLAlchemy 2.x.
-- *Organisation modulaire* : chaque domaine fonctionnel possède son routeur → responsabilités claires, montée en complexité plus simple.
-- *SQLite (aiosqlite)* pour le dev local : rapide à mettre en place, facilement remplaçable par PostgreSQL/MySQL via `DATABASE_URL`.
-- *Tests asynchrones* (`pytest-asyncio` + `httpx`) pour rejouer un flux utilisateur complet (inscription → événements → addons) et valider les garde‑fous de sécurité.
+---
+
+## Fonctionnalités
+
+- **Authentification & profils** : inscription, login, JWT avec claims `iss/aud/iat/exp`, endpoint `/api/users/me`.
+- **Groupes** : création, adhésions avec rôles (admin, droit de créer des événements), listing détaillé des membres.
+- **Événements** : organisateurs multiples, participants, options activables (polls, billetterie, shopping, covoiturage).
+- **Discussions** : fils attachés à un groupe ou un événement, messages hiérarchiques.
+- **Médias** : albums liés aux événements, photos, commentaires.
+- **Sondages** : questions/options multiples, votes traçables par participant.
+- **Billetterie** : types de billets, achat avec contrôle de quota et d’unicité email.
+- **Addons** : shopping list collaborative, offres de covoiturage.
+- **Gestion des erreurs** : réponses normalisées `{"error": "...", "detail": ...}` quelle que soit l’origine de l’exception.
+
+Le test `tests/test_app.py` illustre ce parcours de bout en bout.
 
 ---
 
-## 2. Fonctionnalités couvertes
+## Mise en route
 
-| Domaine           | Capacités clés | Pourquoi ce choix ? |
-|-------------------|----------------|---------------------|
-| **Auth JWT**      | inscription, login OAuth2 password flow, `/api/users/me` | JWT stateless facilite le scaling horizontal et l’interopérabilité front/mobile. |
-| **Groupes**       | CRUD groupes, rôles (admin, création d’événements), adhésions | Central pour structurer la communauté et fédérer les permissions. |
-| **Événements**    | Organisateurs multiples, participants, options (polls, billetterie, addons) | Permet de couvrir tous les cas d’usage du cahier des charges (lancement produit, meetups…). |
-| **Discussions**   | Threads liés à un groupe ou un événement, réponses hiérarchiques | Facilite l’engagement autour d’un événement ou d’une communauté. |
-| **Médias**        | Albums, photos, commentaires | Nécessaire pour animer les événements avant/après. |
-| **Sondages**      | Questions + options, votes par participant, statistiques | Favorise la co‑construction (ex. choix du menu, logistique). |
-| **Billetterie**   | Types de billets, achats (contrôle quota/email) | Couverture complète de la monétisation simple. |
-| **Addons**        | Shopping list, offres de covoiturage | Differencie l’application via des services pratiques complémentaires. |
+```bash
+# 1. Créer un environnement isolé (recommandé)
+python -m venv .venv
+. .venv/Scripts/activate        # Windows PowerShell
+# source .venv/bin/activate     # macOS/Linux
 
-Chaque module est contrôlé par des permissions serveur (par ex. seuls les organisateurs ou participants peuvent manipuler les ressources événementielles).
+# 2. Installer les dépendances
+pip install -r requirements.txt
 
----
+# 3. Démarrer l’API en mode dev
+uvicorn app.main:app --reload
+# Documentation : http://127.0.0.1:8000/docs
+```
 
-## 3. Posture sécurité
-
-| Thématique | Mise en œuvre | Pourquoi |
-|------------|---------------|----------|
-| **Headers façon Helmet** | Middleware `Secure` + en-têtes personnalisés (`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, CSP, Referrer & Permissions Policy). | Réduit les attaques XSS, clickjacking, downgrade HTTP et fuite de metadata. |
-| **Trusted hosts & HTTPS** | `TrustedHostMiddleware` et redirection optionnelle via `ENABLE_HTTPS_REDIRECT`. | Empêche l’empoisonnement Host header, force le transport chiffré en prod. |
-| **JWT renforcé** | Claims `iat`, `exp`, `iss`, `aud` + `expires_in` retourné côté client ; dépendance `get_current_user` valide systématiquement les tokens. | Évite la réutilisation inter‑services et simplifie les renouvellements côté client. |
-| **Validation & hygiène d’entrées** | Pydantic normalise les textes (trim, champs obligatoires non vides), vérifie les URL (`AnyHttpUrl`) et applique une politique de mot de passe (majuscule, minuscule, chiffre, caractère spécial). | Réduit la surface d’injection (SQL/JS) et garantit la qualité des données persistées. |
-| **Rate limiting** | `slowapi` avec clés par IP (ou `X-Forwarded-For`). Limite globale + seuils serrés sur `/api/auth/register` et `/api/auth/token`. | Mitigue la force brute et les tentatives DDoS applicatives économiques. |
-| **Transport sécurisé** | Documentation pour générer un certificat, démarrer uvicorn en HTTPS et activer HSTS. | Simplifie la bascule prod en mode TLS complet. |
-| **Gestion centralisée des erreurs** | `app/core/error_handlers.py` forge des réponses `{"error": "...", "detail": ...}` pour 4xx/5xx, en loggant côté serveur. | Évite d’exposer des traces ou informations internes tout en restant explicite pour le client. |
-| **Audit de dépendances** | `pip-audit` intégré dans la doc. Les vulnérabilités critiques (`python-jose`, `python-multipart`) sont corrigées directement dans `requirements.txt`. Les alertes restantes (ex. `django`, `pip`, `starlette`) proviennent de l’environnement global Anaconda : utilisez un virtualenv propre ou mettez à jour ces packages au niveau système avant déploiement. | Assure une supply chain maîtrisée même sans écosystème npm. |
+Pour un test HTTPS local :
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+uvicorn app.main:app --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+```
+Activer ensuite `ENABLE_HTTPS_REDIRECT=true` dans l’environnement.
 
 ---
 
-## 4. Configuration
+## Configuration
 
-| Variable | Description | Défaut & justification |
-|----------|-------------|------------------------|
-| `SECRET_KEY` | Clé de signature JWT. | `change-me` (doit être remplacé en prod). |
-| `DATABASE_URL` | Connexion SQLAlchemy. | `sqlite+aiosqlite:///./app.db` pour le dev local rapide. |
-| `ALLOWED_ORIGINS` | Whitelist CORS. | `*` afin de ne pas bloquer les tests ; restreindre en prod. |
-| `ALLOWED_HOSTS` | Hosts autorisés par `TrustedHostMiddleware`. | `*` pour le dev ; utiliser vos domaines en prod. |
-| `ENABLE_HTTPS_REDIRECT` | Active `HTTPSRedirectMiddleware`. | `false` (utile uniquement en prod). |
-| `CONTENT_SECURITY_POLICY`, `PERMISSIONS_POLICY`, `REFERRER_POLICY` | Headers de sécurité personnalisables. | Valeurs strictes couvrant la majorité des front SPA. |
-| `RATE_LIMIT_*` | Limites globales/auth/register. | `100/hour`, `20/min`, `5/hour` : équilibre entre confort dev et protection brute-force. |
-| `TOKEN_ISSUER`, `TOKEN_AUDIENCE` | Claims obligatoires lors du décodage JWT. | Valeurs par défaut alignées sur l’API pour éviter les erreurs côté client. |
+Créer un fichier `.env` à la racine si nécessaire. Principales variables :
 
-Créer un `.env` à la racine pour surcharger :
+| Variable | Rôle | Valeur par défaut |
+|----------|------|-------------------|
+| `SECRET_KEY` | Signature JWT | `change-me` |
+| `DATABASE_URL` | Connexion SQLAlchemy | `sqlite+aiosqlite:///./app.db` |
+| `ALLOWED_ORIGINS` | Whitelist CORS | `*` (à restreindre en prod) |
+| `ALLOWED_HOSTS` | Filtre `TrustedHostMiddleware` | `*` |
+| `ENABLE_HTTPS_REDIRECT` | Force HTTPS | `false` |
+| `CONTENT_SECURITY_POLICY`, `PERMISSIONS_POLICY`, `REFERRER_POLICY` | Headers sécurité personnalisables | Valeurs strictes adaptées aux SPA |
+| `RATE_LIMIT_DEFAULT` | Limite globale SlowAPI | `100/hour` |
+| `RATE_LIMIT_AUTH`, `RATE_LIMIT_REGISTER` | Limites dédiées aux endpoints sensibles | `20/minute`, `5/hour` |
+| `TOKEN_ISSUER`, `TOKEN_AUDIENCE` | Claims exigés pour décoder les JWT | `my-social-networks-api`, `my-social-networks-clients` |
 
+Exemple `.env` minimal :
 ```ini
-SECRET_KEY=change-me-now
+SECRET_KEY=change-me
 DATABASE_URL=sqlite+aiosqlite:///./app.db
 ALLOWED_ORIGINS=["http://localhost:3000"]
 ALLOWED_HOSTS=["localhost","127.0.0.1"]
@@ -89,72 +120,47 @@ RATE_LIMIT_REGISTER=5/hour
 
 ---
 
-## 5. Mise en route
+## Sécurité intégrée
 
-1. **Prérequis** : Python 3.11+ (3.12 utilisé en dev). Recommandation forte : créer un virtualenv dédié (`python -m venv .venv && source .venv/Scripts/activate` sur Windows PowerShell).
-2. **Installer les dépendances** :
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Démarrer l’API** :
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-   Documentation interactive sur `http://127.0.0.1:8000/docs`.
-4. **Tester** :
-   ```bash
-   pytest
-   ```
-   - `tests/test_app.py` : scénario end-to-end couvrant le cycle complet (deux utilisateurs, groupes, événements, médias, sondages, billets, addons).
-   - `tests/test_security.py` : vérifie la politique de mot de passe et le déclenchement du rate limit.
-
-### Activer HTTPS localement
-
-```bash
-openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
-uvicorn app.main:app --ssl-keyfile=key.pem --ssl-certfile=cert.pem
-```
-
-Ensuite, passez `ENABLE_HTTPS_REDIRECT=true` et restreignez `ALLOWED_HOSTS` à `["localhost"]`.
-
-### Audit de sécurité Python
-
-```bash
-pip install pip-audit
-pip-audit
-```
-
-Documentez les vulnérabilités résiduelles (voir tableau ci-dessus) : si elles proviennent d’outils hors projet (ex. `django` installé globalement), migrez vers un environnement isolé avant la mise en production.
+1. **Headers type Helmet** : via la bibliothèque `secure` + middleware custom (HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Permissions Policy, Referrer Policy).
+2. **Trusted hosts & HTTPS** : `TrustedHostMiddleware` + option de redirection automatique pour bloquer les requêtes non autorisées.
+3. **JWT** : tokens enrichis (`iat`, `exp`, `iss`, `aud`) et vérification centralisée via `decode_access_token`/`get_current_user`.
+4. **Validation & hygiène** : Pydantic normalise les champs texte, impose des `AnyHttpUrl`, vérifie la complexité des mots de passe et les règles métier.
+5. **Rate limiting** : `slowapi` applique une limite globale et des quotas spécifiques aux routes d’authentification pour réduire brute force/DDoS applicatif.
+6. **Gestion des erreurs** : handlers dédiés pour HTTPException, validation Pydantic, RateLimitExceeded et erreurs générales, afin de ne jamais exposer les stacks.
+7. **Audit des dépendances** : `pip-audit` recommandé. Les dépendances critiques (ex. `python-jose`, `python-multipart`) ont été mises à jour ; les vulnérabilités liées à l’environnement Anaconda doivent être traitées côté poste (virtualenv propre conseillé).
 
 ---
 
-## 6. Décisions architecturales & impacts
+## Tests & audit
 
-| Décision | Justification | Trade-off |
-|----------|---------------|-----------|
-| **JWT stateless + OAuth2 Password Flow** | Simple à intégrer avec front SPAs/mobiles, compatible refresh token ultérieur. | Pas de révocation centralisée par défaut → nécessite rotation courte (`access_token_expire_minutes`). |
-| **SQLModel + SQLite** | API typed-friendly, migrations légères, parfait pour tests en mémoire. | Passage à PostgreSQL impliquera d’ajouter Alembic + revoir `DATABASE_URL`. |
-| **Normalisation Pydantic** | Les champs utilisateurs sont trimés/validés avant persistance → cohérence des données. | Validation plus stricte peut surprendre certains clients (ex. URL invalide rejettée). |
-| **SlowAPI in-process** | Pas de dépendance Redis : idéal pour démonstration/projet académique. | Pour une prod multi-instances, prévoir un backend partagé (Redis) afin de synchroniser les quotas. |
-| **Handlers d’erreurs custom** | Format unique + logs internes → debugging facilité sans fuite d’info. | Les messages sont volontairement succincts pour éviter les leaks ; côté front, prévoir des libellés utilisateur. |
+| Commande | Description |
+|----------|-------------|
+| `pytest` | Lance le test end-to-end + les tests ciblés sécurité. |
+| `pip-audit` | Analyse les dépendances Python à la recherche de CVE connues. |
 
----
-
-## 7. Pistes d’amélioration
-
-1. **Migration complète vers Pydantic v2 idiomatique** (remplacer `Config` par `model_config`, éviter `from_orm`) afin de supprimer les warnings.
-2. **Pagination et filtres** sur les listes volumineuses (groupes, événements, discussions).
-3. **Notifications temps réel** (WebSocket ou WebPush) pour discussions et votes.
-4. **CI/CD** : lint auto (ruff/mypy) + exécution de `pip-audit` et `pytest` dans un pipeline.
-5. **Gestion avancée des tokens** : rafraîchissement, révocation via liste noire ou rotation clé.
+Les warnings Pydantic (migration complète vers v2) sont connus et listés comme axe d’amélioration.
 
 ---
 
-## 8. Références
+## Roadmap / améliorations
+
+1. **Migration Pydantic v2 “pure”** : remplacer les anciennes configurations `Config` par `model_config` et supprimer `from_orm` pour éliminer les warnings.
+2. **Storage rate limit distribué** : brancher SlowAPI sur Redis/Memcached pour supporter plusieurs instances.
+3. **Pagination & filtres** : indispensable pour l’UX lorsque le volume d’événements/discussions augmente.
+4. **CI/CD** : ajouter un pipeline (lint, tests, pip-audit) avant déploiement.
+5. **Gestion avancée des tokens** : intégration d’un rafraîchissement et d’une stratégie de révocation/rotation de clés.
+
+Contributions bienvenues : ouvrir une issue ou proposer une pull request avec description claire, tests associés et mise à jour de la documentation si nécessaire.
+
+---
+
+## Références
 
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [SQLModel](https://sqlmodel.tiangolo.com/)
-- [slowapi (Rate limiting)](https://github.com/laurents/slowapi)
+- [SlowAPI](https://github.com/laurents/slowapi)
 - [pip-audit](https://github.com/pypa/pip-audit)
 
-Projet réalisé dans le cadre du module **API & Web services** (Mastere DE AI 2025‑2027).
+Projet réalisé dans le cadre du module API & Web Services (Mastere DE AI 2025‑2027).
+
